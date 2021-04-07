@@ -94,7 +94,7 @@ soma.data.3 <-
 
 proteins <- labels$term
 time <- "fuptime"
-outc <- "hfref"
+outc <- "hfdiag"
 
 adjust <- adjust.vars$Variable[-1]
 vars <- c(proteins, adjust, time, outc)
@@ -353,7 +353,7 @@ plot.data.visit.five <-
                    suffix = c(".V5", ".V3")) %>%
   dplyr::mutate(Name = substr(labels[term, 'name'], 1, 25))
 
-volcanoPlot(plot.data.visit.five, 
+p <- volcanoPlot(plot.data.visit.five, 
             length(proteins),
             length(bonferroni$kept),
             suffix = c(".V5", ".V3"), 
@@ -433,6 +433,17 @@ eigenData <- eigenGenes$mergedMEs %>%
   dplyr::bind_cols(fifth.visit %>% 
     dplyr::select(dplyr::all_of(c(adjust, time, outc, "hfref", "hfpef"))))
 
+eigenData.V3 <- calculate.eigengenes(third.visit %>% 
+                                       dplyr::select(dplyr::contains("SeqId")),
+                                     clustered.tree$dynCl)
+
+eigenData.V31 <- eigenData.V3
+
+eigenData.V3 <- eigenData.V31$mergedMEs %>%
+  dplyr::mutate_all(scale, T, T) %>%
+  dplyr::bind_cols(third.visit %>% 
+    dplyr::select(dplyr::all_of(c(adjust, time, outc))))
+
 mod.summary <- 
   summarize.modules(wg.data, 
                     eigenGenes$mergedColors,
@@ -441,6 +452,12 @@ mod.summary <-
 
 module.incident.hf <- cox.arry(mod.summary$color,
                                eigenData, time, outc, 
+                               adjust, .src = 1) %>%
+  dplyr::left_join(mod.summary, by = c("term" = "color")) %>%
+  dplyr::select(term, Name, desc, dplyr::everything())
+
+module.incident.hf.V3 <- cox.arry(mod.summary$color,
+                               eigenData.V3, time, outc, 
                                adjust, .src = 1) %>%
   dplyr::left_join(mod.summary, by = c("term" = "color")) %>%
   dplyr::select(term, Name, desc, dplyr::everything())
@@ -457,6 +474,205 @@ module.incident.pef <- cox.arry(mod.summary$color,
                                adjust, .src = 1) %>%
   dplyr::left_join(mod.summary, by = c("term" = "color")) %>%
   dplyr::select(term, Name, desc, dplyr::everything())
+
+
+module.incident.hf.unadj <- cox.arry(mod.summary$color,
+                               eigenData, time, outc, 
+                               adjust = NULL, .src = 1) %>%
+  dplyr::left_join(mod.summary, by = c("term" = "color")) %>%
+  dplyr::select(term, Name, desc, dplyr::everything())
+
+module.incident.hf.V3.unadj <- cox.arry(mod.summary$color,
+                               eigenData.V3, time, outc, 
+                               adjust = NULL, .src = 1) %>%
+  dplyr::left_join(mod.summary, by = c("term" = "color")) %>%
+  dplyr::select(term, Name, desc, dplyr::everything())
+
+module.incident.ref.unadj <- cox.arry(mod.summary$color,
+                               eigenData, time, "hfref", 
+                               adjust = NULL, .src = 1) %>%
+  dplyr::left_join(mod.summary, by = c("term" = "color")) %>%
+  dplyr::select(term, Name, desc, dplyr::everything())
+
+
+module.incident.pef.unadj <- cox.arry(mod.summary$color,
+                               eigenData, time, "hfpef", 
+                               adjust = NULL, .src = 1) %>%
+  dplyr::left_join(mod.summary, by = c("term" = "color")) %>%
+  dplyr::select(term, Name, desc, dplyr::everything())
+
+
+plot.module.inchf.adj <- 
+  module.incident.hf %>% 
+  dplyr::mutate(Color = substring(term, 3, 100)) %>%
+  dplyr::select(Color, desc, hazr, pval, Name, hubs, freq)
+
+plot.module.inchf.V3.adj <- 
+  module.incident.hf.V3 %>% 
+  dplyr::mutate(Color = substring(term, 3, 100)) %>%
+  dplyr::select(Color, desc, hazr, pval, Name, hubs, freq)
+
+plot.module.incref.adj <- 
+  module.incident.ref %>% 
+  dplyr::mutate(Color = substring(term, 3, 100)) %>%
+  dplyr::select(Color, desc, hazr, pval, Name, hubs, freq)
+
+plot.module.incpef.adj <- 
+  module.incident.pef %>% 
+  dplyr::mutate(Color = substring(term, 3, 100)) %>%
+  dplyr::select(Color, desc, hazr, pval, Name, hubs, freq)
+
+plot.module.inchf.unadj <- 
+  module.incident.hf.unadj %>% 
+  dplyr::mutate(Color = substring(term, 3, 100)) %>%
+  dplyr::select(Color, desc, hazr, pval, Name, hubs, freq)
+
+plot.module.inchf.V3.unadj <- 
+  module.incident.hf.V3.unadj %>% 
+  dplyr::mutate(Color = substring(term, 3, 100)) %>%
+  dplyr::select(Color, desc, hazr, pval, Name, hubs, freq)
+
+plot.module.incref.unadj <- 
+  module.incident.ref.unadj %>% 
+  dplyr::mutate(Color = substring(term, 3, 100)) %>%
+  dplyr::select(Color, desc, hazr, pval, Name, hubs, freq)
+
+plot.module.incpef.unadj <- 
+  module.incident.pef.unadj %>% 
+  dplyr::mutate(Color = substring(term, 3, 100)) %>%
+  dplyr::select(Color, desc, hazr, pval, Name, hubs, freq)
+
+```
+```{r}
+
+df1 <- eigenGenes$ME$eigengenes
+df2 <- eigenGenes$ME$averageExpr
+df3 <- eigenGenes$ME$varExplained
+names(df3) <- names(eigenGenes$ME$eigengenes)
+
+df4 <- eigenData.V31$ME$eigengenes
+df5 <- eigenData.V31$ME$averageExpr
+df6 <- eigenData.V31$ME$varExplained
+names(df6) <- names(eigenData.V31$ME$eigengenes)
+
+df7 <- tibble::tibble(term = labels$term, Module = eigenGenes$mergedColors) %>%
+    dplyr::group_by(Module) %>%
+    dplyr::mutate(place = 1:length(term)) %>%
+    tidyr::pivot_wider(names_from = place, values_from = term, values_fill = "") %>%
+    as.data.frame() %>% t()
+
+df8 <- tibble::tibble(term = labels$name, Module = eigenGenes$mergedColors) %>%
+    dplyr::group_by(Module) %>%
+    dplyr::mutate(place = 1:length(term)) %>%
+    tidyr::pivot_wider(names_from = place, values_from = term, values_fill = "") %>%
+    as.data.frame() %>% t()
+
+df9 <- tibble::tibble(term = labels$gene, Module = eigenGenes$mergedColors) %>%
+    dplyr::group_by(Module) %>%
+    dplyr::mutate(place = 1:length(term)) %>%
+    tidyr::pivot_wider(names_from = place, values_from = term, values_fill = "") %>%
+    as.data.frame() %>% t()
+
+write.csv(df1, '~/Desktop/visit-five-eigengenes.csv', row.names = FALSE)
+write.csv(df2, '~/Desktop/visit-five-average-exprs.csv', row.names = FALSE)
+write.csv(df3, '~/Desktop/visit-five-var-explained.csv', row.names = FALSE)
+write.csv(df4, '~/Desktop/visit-three-eigengenes.csv', row.names = FALSE)
+write.csv(df5, '~/Desktop/visit-three-average-exprs.csv', row.names = FALSE)
+write.csv(df6, '~/Desktop/visit-three-var-explained.csv', row.names = FALSE)
+write.csv(df7, '~/Desktop/proteins-modules-seqs.csv', row.names = FALSE)
+write.csv(df8, '~/Desktop/proteins-modules-names.csv', row.names = FALSE)
+write.csv(df9, '~/Desktop/proteins-modules-genes.csv', row.names = FALSE)
+
+
+
+```
+
+```{r}
+library(xlsx)
+
+wb <- createWorkbook()
+sheet1   <- createSheet(wb, sheetName = 'Module Summaries')
+sheet2   <- createSheet(wb, sheetName = 'Incident HF Adjusted')
+sheet2a  <- createSheet(wb, sheetName = 'V3 Incident HF Adjusted')
+sheet3   <- createSheet(wb, sheetName = 'Incident rEF Adjusted')
+sheet4   <- createSheet(wb, sheetName = 'Incident pEF Adjusted')
+sheet5   <- createSheet(wb, sheetName = 'Incident HF No Adjustment')
+sheet5a  <- createSheet(wb, sheetName = 'V3 Incident HF No Adjustment')
+sheet6   <- createSheet(wb, sheetName = 'Incident rEF No Adjustment')
+sheet7   <- createSheet(wb, sheetName = 'Incident pEF No Adjustment')
+
+
+addDataFrame(mod.summary %>% as.data.frame(), sheet = sheet1, row.names = FALSE)
+addDataFrame(plot.module.inchf.adj  %>% as.data.frame(), sheet = sheet2, row.names = FALSE)
+addDataFrame(plot.module.inchf.V3.adj  %>% as.data.frame(), sheet = sheet2a, row.names = FALSE)
+addDataFrame(plot.module.incref.adj %>% as.data.frame(), sheet = sheet3, row.names = FALSE)
+addDataFrame(plot.module.incpef.adj %>% as.data.frame(), sheet = sheet4, row.names = FALSE)
+
+addDataFrame(plot.module.inchf.unadj  %>% as.data.frame(), sheet = sheet5, row.names = FALSE)
+addDataFrame(plot.module.inchf.V3.unadj  %>% as.data.frame(), sheet = sheet5a, row.names = FALSE)
+addDataFrame(plot.module.incref.unadj %>% as.data.frame(), sheet = sheet6, row.names = FALSE)
+addDataFrame(plot.module.incpef.unadj %>% as.data.frame(), sheet = sheet7, row.names = FALSE)
+
+plot.mod.inchf.adj   <- plot.module.inchf.adj  %>%  
+  dplyr::mutate(Name = Color) %>%
+  volcanoPlot.temp.refpef(4877, 1)
+
+plot.mod.inchf.V3.adj   <- plot.module.inchf.V3.adj  %>%  
+  dplyr::mutate(Name = Color) %>%
+  volcanoPlot.temp.refpef(4877, 1)
+
+plot.mod.incref.adj   <- plot.module.incref.adj %>% 
+  dplyr::mutate(Name = Color) %>% 
+  volcanoPlot.temp.refpef(4877, 1)
+
+plot.mod.incpef.adj   <- plot.module.incpef.adj %>%
+  dplyr::mutate(Name = Color) %>%
+  volcanoPlot.temp.refpef(4877, 1)
+
+plot.mod.inchf.unadj   <- plot.module.inchf.unadj %>% 
+  dplyr::mutate(Name = Color) %>%
+  volcanoPlot.temp.refpef(4877, 1)
+
+plot.mod.inchf.V3.unadj   <- plot.module.inchf.V3.unadj %>% 
+  dplyr::mutate(Name = Color) %>%
+  volcanoPlot.temp.refpef(4877, 1)
+
+plot.mod.incref.unadj   <- plot.module.incref.unadj %>% 
+  dplyr::mutate(Name = Color) %>% 
+  volcanoPlot.temp.refpef(4877, 1)
+
+plot.mod.incpef.unadj   <- plot.module.incpef.unadj %>% 
+  dplyr::mutate(Name = Color) %>% 
+  volcanoPlot.temp.refpef(4877, 1)
+
+
+ggsave(    'volcano-inchf-adj.png', plot.mod.inchf.adj)
+addPicture('volcano-inchf-adj.png', sheet = sheet2, scale = 0.4)
+
+ggsave(    'volcano-inchf-V3-adj.png', plot.mod.inchf.V3.adj)
+addPicture('volcano-inchf-V3-adj.png', sheet = sheet2a, scale = 0.4)
+
+ggsave(    'volcano-incref-adj.png', plot.mod.incref.adj)
+addPicture('volcano-incref-adj.png', sheet = sheet3, scale = 0.4)
+
+ggsave(    'volcano-incpef-adj.png', plot.mod.incpef.adj)
+addPicture('volcano-incpef-adj.png', sheet = sheet4, scale = 0.4)
+
+ggsave(    'volcano-inchf-unadj.png', plot.mod.inchf.unadj)
+addPicture('volcano-inchf-unadj.png', sheet = sheet5, scale = 0.4)
+
+ggsave(    'volcano-inchf-V3-unadj.png', plot.mod.inchf.V3.unadj)
+addPicture('volcano-inchf-V3-unadj.png', sheet = sheet5a, scale = 0.4)
+
+ggsave(    'volcano-incref-unadj.png', plot.mod.incref.unadj)
+addPicture('volcano-incref-unadj.png', sheet = sheet6, scale = 0.4)
+
+ggsave(    'volcano-incpef-unadj.png', plot.mod.incpef.unadj)
+addPicture('volcano-incpef-unadj.png', sheet = sheet7, scale = 0.4)
+
+xlsx <- '~/Desktop/module-associations.xlsx'
+saveWorkbook(wb, file = xlsx)
+
 
 ```
 

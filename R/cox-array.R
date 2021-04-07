@@ -40,7 +40,11 @@
 cox.modl <- function(.data, time = "fuptime", outcome = "hfdiag",
                      protein, .adjust = adjust, extend = 100) {
 
+
   formula <- glue::glue("survival::Surv({time}, {outcome}) ~ {protein} + {paste0(.adjust, collapse = '+')}")
+  if (is.null(adjust)) {
+    formula <- glue::glue("survival::Surv({time}, {outcome}) ~ {protein}")
+  }
 
   cox <- survival::coxph(as.formula(formula), data = .data)
   cox.mod <- broom::tidy(cox, exponentiate = TRUE, conf.int = TRUE)
@@ -306,7 +310,7 @@ volcanoPlot.temp <- function(data, .pval1, .pval2, suffix, ...) {
           paste0(suffix[2] %>% substr(2,100))) %>%
     as.character()
 
-  EnhancedVolcano::EnhancedVolcano(data, lab = data$Name,
+  p <- EnhancedVolcano::EnhancedVolcano(data, lab = data$Name,
                                    x = paste0("hazr", suffix[2]), y = secn.pv,
                                    xlab = "Hazard Ratio", xlim = c(0.5, 2.3),
                                    ylab = expression("-log"[10]*"(P)"),
@@ -319,6 +323,39 @@ volcanoPlot.temp <- function(data, .pval1, .pval2, suffix, ...) {
                                    gridlines.major = FALSE,
                                    gridlines.minor = FALSE,
                                    ...)
+
+  return(p)
+}
+
+volcanoPlot.temp.refpef <- function(data, .pval1, .pval2, ...) {
+
+  plot.df <- data
+  prim.pv <- "pval"
+
+  keyvals <- plot.df[[prim.pv]] %>%
+    cut(breaks = c(0, 0.05/.pval1, 0.05, 1),
+        labels = c("royalblue", "red2", "grey30")) %>%
+    as.character()
+
+  names(keyvals) <- plot.df[[prim.pv]] %>%
+    cut(breaks = c(0, 0.05/.pval1, 0.05, 1),
+        labels = c("BF Sig ", "FDR sig ", "Not Sig ") %>%
+          paste0(".V5" %>% substr(2,100))) %>%
+    as.character()
+
+
+  p <- EnhancedVolcano::EnhancedVolcano(data, lab = data$Name,
+                                   x = paste0("hazr"), y = prim.pv,
+                                   xlab = "Hazard Ratio", xlim = c(0.5, 2.3),
+                                   ylab = expression("-log"[10]*"(P)"),
+                                   pCutoff = 0.05 / .pval1,
+                                   FCcutoff = 0.5,
+                                   hline = c(0.05, 0.05/.pval1, 0.05/.pval2),
+                                   colCustom = keyvals,
+                                   gridlines.major = FALSE,
+                                   gridlines.minor = FALSE,
+                                   ...)
+  return(p)
 }
 
 
@@ -363,7 +400,7 @@ volcanoPlot.temp.lasso <- function(data, .pval1, .pval2, suffix, terms, ...) {
           paste0(suffix[2] %>% substr(2,100))) %>%
     as.character()
 
-  EnhancedVolcano::EnhancedVolcano(data, lab = data$Name,
+  p <- EnhancedVolcano::EnhancedVolcano(data, lab = data$Name,
                                    x = paste0("hazr", suffix[1]), y = prim.pv,
                                    xlab = "Hazard Ratio", xlim = c(0.5, 2.3),
                                    ylab = expression("-log"[10]*"(P)"),
@@ -377,4 +414,40 @@ volcanoPlot.temp.lasso <- function(data, .pval1, .pval2, suffix, terms, ...) {
                                    gridlines.minor = FALSE,
                                    legendPosition = "right",
                                    ...)
+
+  return(p)
+}
+
+
+volcanoPlot.temp.lasso.refpef <- function(data, .pval1, .pval2, terms, ...) {
+
+  plot.df <- data
+  prim.pv <- "pval"
+
+  keyvals <- plot.df[[prim.pv]] %>%
+    cut(breaks = c(0, 0.05/.pval1, 0.05, 1),
+        labels = c("royalblue", "red2", "grey30")) %>%
+    as.character()
+
+  names(keyvals) <- plot.df[[prim.pv]] %>%
+    cut(breaks = c(0, 0.05/.pval1, 0.05, 1),
+        labels = c("BF Sig ", "FDR sig ", "Not Sig ") %>%
+          paste0(".V5" %>% substr(2,100))) %>%
+    as.character()
+
+  keyvals[data$term %in% terms] <- "purple"
+  names(keyvals)[data$term %in% terms] <- "LASSO Retained"
+
+  p <- EnhancedVolcano::EnhancedVolcano(data, lab = data$Name,
+                                        x = paste0("hazr"), y = prim.pv,
+                                        xlab = "Hazard Ratio", xlim = c(0.5, 2.3),
+                                        ylab = expression("-log"[10]*"(P)"),
+                                        pCutoff = 0.05 / .pval1,
+                                        FCcutoff = 0.5,
+                                        hline = c(0.05, 0.05/.pval1, 0.05/.pval2),
+                                        colCustom = keyvals,
+                                        gridlines.major = FALSE,
+                                        gridlines.minor = FALSE,
+                                        ...)
+  return(p)
 }

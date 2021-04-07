@@ -149,6 +149,15 @@ select.min.tree <- function(tree.list) {
 
 }
 
+which.min.tree <- function(tree.list) {
+
+  errors <-
+    purrr::map_dbl(tree.list, ~ .x$rand.tree$err.rate[.x$rand.tree$ntree])
+  which(errors == min(errors)) %>%
+    return()
+
+}
+
 predict.new.tree <- function(data, tree, time, outc) {
 
   outcomes <- c(time, outc)

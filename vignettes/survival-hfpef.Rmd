@@ -1,0 +1,343 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r setup, include = FALSE}
+
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+
+options(rmarkdown.html_vignette.check_title = FALSE)
+```
+
+```{r libraries, message=FALSE, warning=FALSE}
+source('../R/load-data.R')
+source('../R/make-tables.R')
+source('../R/temp-fig1.R')
+source('../R/cox-array.R')
+source('../R/elastic-net.R')
+source('../R/random-forest.R')
+source('../R/wgcna.R')
+source('../R/linear-array.R')
+source('../R/linear-elastic-net.R')
+source('../R/linear-random-forest.R')
+
+library(magrittr)
+
+set.seed(101010)
+doParallel::registerDoParallel(12)
+future::plan(future::multisession, workers = 8)
+
+```
+
+```{r file.path.setup, message=FALSE, warning=FALSE}
+
+path <- function(...) { 
+  return(file.path('..', 'inst', 'extdata', ...))  
+}
+
+label.path <- path('study-data', 'proteinMapping.csv')
+study.path <- path('study-data', 'ARICmaster_121820.dta')
+
+soma5.path <- path('study-data', 'ARICsomaV5.txt')
+mods5.path <- path('aux-data', 'visit-five')
+
+addtl.vars <- path('study-data', 'ARIC_newvar_010621.dta')
+addtl.mods <- path('aux-data', 'visit-five', 'adtlvars.csv')
+echov.mods <- path('aux-data', 'visit-five', 'echovars.csv')
+
+```
+
+```{r data.load, echo=TRUE, message=FALSE, warning=FALSE}
+
+labels <-
+  get.labels(label.path, sid,
+             uniprot.full.name,
+             entrezgenesymbol,
+             flag2 == 0)
+
+adjust.vars <- 
+  readr::read_csv(file.path(mods5.path, 
+                            'adjusted.csv'))
+
+aric.master <- 
+  haven::read_dta(study.path)
+
+soma.data.5 <-
+  get.soma(soma5.path, labels = labels)
+
+proteins <- labels$term
+time <- "fuptime"
+outc <- "hfpef"
+
+adjust <- adjust.vars$Variable[-1]
+vars <- c(proteins, adjust, time, outc)
+
+```
+
+```{r v5.data.processing, message=FALSE, warning=FALSE}
+
+visit.five <- 
+  get.visit(soma.data = soma.data.5,
+            path.mods = mods5.path,
+            master = aric.master)
+
+table1 <- 
+  make.tables(visit.five, 
+              time, outc, 
+              path('aux-data', 
+                   'table-template.csv'))
+
+res <- 
+  consort('.', mods5.path, soma.data.5, 
+          visit.five, labels, time, outc)
+
+```
+
+```{r visit.data.scaling}
+
+num.var <- numeric.id(visit.five, adjust)
+
+fifth.visit <- visit.five  %>%
+  get.scaled(num.var, proteins)
+
+```
+
+
+```{r visit.five.uniprotein}
+
+fifth <- fifth.visit %>% 
+  dplyr::select(dplyr::all_of(vars))
+
+univariate.results <-
+  cox.arry(proteins, fifth, 
+           time, outc, adjust, 1)
+
+```
+
+```{r replication.analysis.univariate}
+
+plot.data <-
+  univariate.results %>%
+  dplyr::mutate(Name = labels[term, "name"])
+
+bonferroni <- 
+  terms.to.keep(plot.data,
+                .pval = 0.05/length(proteins), 1)
+falsediscr <- 
+  terms.to.keep(plot.data, 
+                .pval = 0.05, 1)
+
+```
+
+```{r num.repl.proteins}
+
+"<=== Sig at BF Visit 5 ===> Proteins: " %>%
+  paste0(length(bonferroni$kept)) %>%
+  cat()
+
+"<=== Sig at FDR Visit 5 ===> Proteins: " %>%
+  paste0(length(falsediscr$kept)) %>%
+  cat()
+
+```
+
+```{r univariate.data.export}
+
+bf.visit.five <- bonferroni$data %>% 
+  dplyr::filter(src == 1) %>% 
+  dplyr::arrange(pval) %>%
+  dplyr::mutate(Name = substr(Name, 1, 25)) %>%
+  dplyr::select(term, Name, desc)
+
+names(bf.visit.five) <- c("SeqId", "Name", "HR Visit 5")
+
+univ.stats <-
+  data.frame(stats = c('Number of Bonferroni (0.05 / 4877) Proteins: ',
+                       'Number of False Disc. Rate (0.05) Proteins: '),
+             values = c(length(bonferroni$kept), length(falsediscr$kept)))
+
+```
+
+
+```{r uniprotein.volcano.plot}
+
+volcano <- volcanoPlot.temp.refpef(plot.data, 
+            length(proteins),
+            length(bonferroni$kept),
+            title = "ARIC Visit 5 Incident HF",
+            subtitle = "Color = V5 Significance") 
+
+```
+
+
+```{r elastic.net.survival}
+
+fifth.lasso <- elastic.net(fifth.visit, 
+                           bonferroni$kept, 
+                           adjust, time, outc)
+
+fifth.score <- get.score(fifth.visit, 
+                         fifth.lasso$coefs, 
+                         adjust, time, outc)
+
+fifth.lasso.coefs <- 
+  tibble::tibble(`SeqId` = fifth.lasso$terms,
+                 coef = fifth.lasso$coefs[`SeqId`,],
+                 `HR LASSO` = exp(coef)) %>%
+  dplyr::left_join(bf.visit.five, by = "SeqId") %>%
+  dplyr::select(Name, `SeqId`, `HR LASSO`, `HR Visit 5`)
+
+plot.lasso <- 
+  tibble::tibble(term = "LASSO", 
+                 hazr = summary(fifth.score$cox)$coefficients[1,1],
+                 pval = summary(fifth.score$cox)$coefficients[1,5], 
+                 Name = "**LASSO SCORE**") %>%
+  dplyr::bind_rows(plot.data) %>%
+  dplyr::select(Name, term, hazr, pval)
+
+cstat <- fifth.lasso$model$cvm[which(fifth.lasso$model$lambda == fifth.lasso$model$lambda.1se)]
+lasso.stats <-
+  data.frame(stats = c('Number of Bonferroni Proteins: ',
+                       'Number of LASSO retained Proteins: ',
+                       'LASSO Model C Statistic: ',
+                       'LASSO Score HR: ', 
+                       'LASSO Score P Value: ',
+                       'LASSO Score Model C Statistic: '),
+             values = c(length(bonferroni$kept), 
+                        length(fifth.lasso$terms), 
+                        cstat,
+                        summary(fifth.score$cox)$coefficients[1,1],
+                        summary(fifth.score$cox)$coefficients[1,5],
+                        summary(fifth.score$cox)$concordance[1] %>% round(4)))
+
+lasso.vol <- 
+  volcanoPlot.temp.lasso.refpef(plot.lasso, 4877, 1, c(fifth.lasso$terms, 'LASSO'), 
+                                selectLab = c(labels[fifth.lasso$terms, 'name'], "**LASSO SCORE**"))
+
+beta.beta.plot <- 
+  tibble::tibble(term = fifth.lasso$terms,
+                 coef = fifth.lasso$coefs[term,]) %>%
+  dplyr::left_join(univariate.results, by = "term") %>% 
+  dplyr::mutate(hazr = log(hazr)) %>%
+  dplyr::select(term, coef, hazr)
+
+
+```
+
+```{r randomForests.survival, cache=TRUE}
+
+random.forest.list <- 
+  filter.rf(fifth, time, outc, 30, adjust)
+first.tree <- random.forest.list[[1]]
+min.tree <- select.min.tree(random.forest.list)
+
+fifth.score.rf <- 
+  rf.tree.score(fifth, min.tree$rand.tree,
+                time, outc)
+
+p <- plot.var.imp(min.tree$rand.tree, labels)
+
+
+rand.for.stats <-
+  data.frame(stats = c('Minimum Tree Number: ',
+                       'Number of Random Forest Proteins (No Adjustment Vars): ',
+                       'Tree C statistic: ',
+                       'First Tree (4877 Proteins) C statistic: '),
+             values = c(which.min.tree(random.forest.list), 
+                        length(min.tree$vars.tree) - length(adjust),
+                       1-min.tree$rand.tree$err.rate[min.tree$rand.tree$ntree],
+                       1-first.tree$rand.tree$err.rate[first.tree$rand.tree$ntree]))
+
+```
+
+
+
+
+
+```{r}
+library(xlsx)
+
+wb <- createWorkbook()
+sheet1  <- createSheet(wb, sheetName = 'Table 1')
+sheet2  <- createSheet(wb, sheetName = 'Bonferroni Significant')
+sheet3  <- createSheet(wb, sheetName = 'LASSO Model')
+sheet5  <- createSheet(wb, sheetName = 'Random Forest Filtering')
+sheet6  <- createSheet(wb, sheetName = 'Model Comparisons')
+#sheet7  <- createSheet(wb, sheetName = 'WGCNA Module Associations')
+#sheet8  <- createSheet(wb, sheetName = 'Candidate Echo Associations')
+#sheet9  <- createSheet(wb, sheetName = 'Delta Echo Associations')
+#sheet10 <- createSheet(wb, sheetName = 'Functional Measure Associations')
+sheet11 <- createSheet(wb, sheetName = 'Full Univariate Results')
+
+addDataFrame(table1 %>% as.data.frame(), sheet = sheet1, row.names = FALSE)
+
+addDataFrame(univ.stats, sheet = sheet2, row.names = FALSE, col.names = FALSE)
+addDataFrame(bf.visit.five %>% as.data.frame(), sheet = sheet2, 
+             row.names = FALSE, startRow = dim(univ.stats)[1] + 2)
+
+addDataFrame(univariate.results %>%
+               dplyr::select(-cint, -src) %>%
+               dplyr::arrange(pval) %>% 
+               dplyr::mutate(Name = substr(labels[term, 'name'], 1, 25)) %>%
+               as.data.frame(), sheet = sheet11, row.names = FALSE)
+
+addDataFrame(lasso.stats, sheet = sheet3, row.names = FALSE, col.names = FALSE)
+addDataFrame(fifth.lasso.coefs %>% as.data.frame(), sheet = sheet3, 
+             row.names = FALSE, startRow = dim(lasso.stats)[1] + 2)
+
+addDataFrame(rand.for.stats, sheet = sheet5, row.names = FALSE, col.names = FALSE)
+addDataFrame(data.frame(Variables = min.tree$vars.tree[1:(length(min.tree$vars.tree) - (length(adjust) + 2))], 
+                        Names = labels[min.tree$vars.tree[1:(length(min.tree$vars.tree) - (length(adjust) + 2))], 'name']),
+             sheet = sheet5, 
+             row.names = FALSE, startRow = dim(rand.for.stats)[1] + 2)
+
+membership.table <- 
+  tibble::tibble(term = labels$term, 
+                 Name = labels[term, 'name'],
+                `Univariate Screen` = term %in% bf.visit.five$SeqId,
+                `LASSO Model` = term %in% fifth.lasso$terms,
+                `Random Forest Screen` = term %in% min.tree$vars.tree,
+                Frequency = `Univariate Screen` + `LASSO Model` + `Random Forest Screen`) %>%
+  dplyr::arrange(dplyr::desc(Frequency)) %>%
+  dplyr::filter(Frequency > 0)
+
+addDataFrame(membership.table %>% as.data.frame(), sheet = sheet6, row.names = FALSE)
+
+ggplot2::ggsave('consort.png', res, height=6, width = 7.5, units = "in")
+ggplot2::ggsave('volcano.png', volcano)
+ggplot2::ggsave('lassovol.png', lasso.vol, height=10, width=8, units = "in")
+ggplot2::ggsave('randomforestvarimp.png', p, height=10, width=8, units = "in")
+
+png(filename = 'elasticnet.png', width = 800, height = 600, pointsize = 16)
+fifth.lasso$model %>% plot()
+dev.off()
+
+png(filename = 'betabeta.png', width = 800, height = 800, pointsize = 16)
+par(pty = "s")
+plot(beta.beta.plot$hazr, beta.beta.plot$coef, 
+     xlim = c(-0.75, 0.75), ylim = c(-0.75, 0.75),
+     xlab = "", ylab = "")
+title(main = "Beta vs Beta Visit 5 vs LASSO Coefficient",
+      xlab = "Visit 5 Beta",
+      ylab = "LASSO Coefficient")
+abline(h=0, lty=c(2), col = c("black"))
+abline(v=0, lty=c(2), col = c("black"))
+abline(a=0, b=1, lty=c(2), col = c("black"))
+dev.off()
+
+addPicture('consort.png', sheet = sheet1, startColumn = 3, startRow = 2, scale = 0.4)
+addPicture('volcano.png', sheet = sheet2, startColumn = 5, startRow = 2, scale = 0.4)
+addPicture('elasticnet.png', sheet = sheet3, startColumn = 5, startRow = 2)
+addPicture('lassovol.png', sheet = sheet3, startColumn = 5, startRow = 36, scale = 0.4)
+addPicture('betabeta.png', sheet = sheet3, startColumn = 5, startRow = 70)
+addPicture('randomforestvarimp.png', sheet = sheet5, startColumn = 4, startRow = 2, scale = 0.4)
+
+xlsx <- paste0('~/Desktop/', outc, '-survival.xlsx')
+saveWorkbook(wb, file = xlsx)
+```
+
+

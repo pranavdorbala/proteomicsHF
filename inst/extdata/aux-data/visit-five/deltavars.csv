@@ -1,0 +1,8 @@
+Variable,Expression,Label
+id,id,Study ID
+delta.lvef,d_lvef,Change in LVEF V5 to V7
+delta.gls,d_gls_p,Change in GLS V5 to V7
+delta.lav,d_lav,Change in LAV V5 to V7
+v5.lvef,lvef_v5,Visit 5 LVEF
+v5.gls,gls_p_v5,Visit 5 GLS
+v5.lav,lav_v5,Visit 5 LAV

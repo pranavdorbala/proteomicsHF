@@ -1,0 +1,158 @@
+---
+title: "Delta Echo Preliminary Data"
+output: html_notebook
+---
+
+```{r libraries, message=FALSE, warning=FALSE}
+source('../R/load-data.R')
+source('../R/make-tables.R')
+source('../R/temp-fig1.R')
+source('../R/cox-array.R')
+source('../R/elastic-net.R')
+source('../R/random-forest.R')
+source('../R/wgcna.R')
+source('../R/linear-array.R')
+source('../R/linear-elastic-net.R')
+source('../R/linear-random-forest.R')
+
+library(magrittr)
+
+set.seed(101010)
+doParallel::registerDoParallel(12)
+future::plan(future::multisession, workers = 8)
+
+```
+
+```{r file.path.setup, message=FALSE, warning=FALSE}
+
+path <- function(...) { 
+  return(file.path('..', 'inst', 'extdata', ...))  
+}
+
+delta.path <- '~/Dropbox (Partners HealthCare)/Shared Folders/Pranav-Dr. Shah/Data Files/Final V5V7 echo_master merged 02102021.dta'
+
+# file.path("~", "Dropbox (Partners HealthCare)",
+#                         "Shared Folders", "Dr. Shah's fellows", "Datasets", 
+#                         "Final V5V7 echo_master merged 02102021.dta")
+
+
+lastr.path <- '~/Dropbox (Partners HealthCare)/Shared Folders/Pranav-Dr. Shah/Data Files/Master_ARIC_LA_Analysis.dta'
+
+
+# ile.path("~", "Dropbox (Partners HealthCare)",
+#                         "Shared Folders", "Pranav-Dr.Shah", "ARIC V5 LA strain",
+#                         "Master_ARIC_LA_Analysis.dta")
+# '~/Dropbox (Partners HealthCare)/Shared Folders/Pranav-Dr. Shah/Data Files/Master_ARIC_LA_Analysis.dta'
+label.path <- path('study-data', 'proteinMapping.csv')
+soma5.path <- path('study-data', 'ARICsomaV5.txt')
+mods5.path <- path('aux-data', 'visit-five')
+delta.mods <- path('aux-data', 'visit-five', 'deltavars.csv')
+lastr.mods <- path('aux-data', 'visit-five', 'lastrvars.csv')
+
+```
+
+```{r data.load, echo=TRUE, message=FALSE, warning=FALSE}
+
+labels <-
+  get.labels(label.path, sid,
+             uniprot.full.name,
+             entrezgenesymbol,
+             flag2 == 0)
+
+adjust.vars <- 
+  readr::read_csv(file.path(mods5.path, 
+                            'adjusted.csv'))
+
+delta.vars <-  readr::read_csv(delta.mods)
+lastr.vars <-  readr::read_csv(lastr.mods)
+aric.master <- haven::read_dta(delta.path)
+
+soma.data.5 <- get.soma(soma5.path, labels = labels)
+
+proteins <- labels$term
+
+adjust <- adjust.vars$Variable[-1]
+d.vars <- delta.vars$Variable[-1]
+la.var <- lastr.vars$Variable[-1]
+
+```
+
+```{r data.processing, message=FALSE, warning=FALSE}
+
+visit.five <- 
+  get.visit(soma.data = soma.data.5,
+            path.mods = mods5.path,
+            master = aric.master)
+
+num.var <- numeric.id(visit.five, adjust)
+fifth.visit <- visit.five  %>%
+  get.scaled(num.var, proteins)
+
+fifth.visit.delta <- 
+  add.data(new.path = delta.path, 
+           old.data = fifth.visit,
+           mods = delta.mods) %>%
+  get.scaled(d.vars)
+
+fifth.visit.delta.la <- 
+  add.data(new.path = lastr.path, 
+           old.data = fifth.visit.delta,
+           mods = lastr.mods) %>%
+  get.scaled(la.var) %>%
+  dplyr::select(dplyr::all_of(c(d.vars, la.var, adjust, proteins)))
+
+```
+
+```{r}
+
+univariate.echo.models <- 
+  lin.arry.aggr(proteins,
+                fifth.visit.delta.la,
+                c(d.vars, la.var), 
+                adjust, labels) 
+
+univariate.echo.terms.bonf <- 
+  lin.reg.terms.to.keep(univariate.echo.models$all.res, 4877)
+
+```
+
+```{r}
+uni.echos <- univariate.echo.models$all.res %>% 
+  dplyr::select(term, Name, desc, outcome, pval) %>%
+  split(.$outcome) %>%
+  purrr::map(~ .x %>% 
+        dplyr::arrange(pval) %>%
+        dplyr::select(-outcome) %>%
+        tibble::column_to_rownames(var = "term"))
+
+library(xlsx)
+
+write.xlsx(uni.echos$delta.lvef, 
+           file = "~/Desktop/grant-analysis-all-results.xlsx",
+           sheetName = 'Delta LVEF', append = TRUE)
+
+write.xlsx(uni.echos$delta.gls, 
+           file = "~/Desktop/grant-analysis-all-results.xlsx",
+           sheetName = 'Delta GLS', append = TRUE)
+
+write.xlsx(uni.echos$delta.lav, 
+           file = "~/Desktop/grant-analysis-all-results.xlsx",
+           sheetName = 'Delta LAV', append = TRUE)
+
+write.xlsx(uni.echos$v5.lvef, 
+           file = "~/Desktop/grant-analysis-all-results.xlsx",
+           sheetName = 'V5 LVEF', append = TRUE)
+
+write.xlsx(uni.echos$v5.gls, 
+           file = "~/Desktop/grant-analysis-all-results.xlsx",
+           sheetName = 'V5 GLS', append = TRUE)
+
+write.xlsx(uni.echos$v5.lav, 
+           file = "~/Desktop/grant-analysis-all-results.xlsx",
+           sheetName = 'V5 LAV', append = TRUE)
+
+write.xlsx(uni.echos$lares, 
+           file = "~/Desktop/grant-analysis-all-results.xlsx",
+           sheetName = 'V5 LA Reservoir', append = TRUE)
+```
+

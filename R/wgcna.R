@@ -108,7 +108,9 @@ calculate.eigengenes <- function(data, colors) {
 
   return(list(eigenGenes = eigenGenes,
               mergedColors = merge$colors,
-              mergedMEs = merge$newMEs))
+              mergedMEs = merge$newMEs,
+              ME = MEList,
+              merge = merge))
 }
 
 plot.new.colors <- function(tree, colors1, colors2, labs) {

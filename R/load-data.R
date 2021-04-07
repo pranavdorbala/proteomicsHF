@@ -404,15 +404,18 @@ get.scaled <- function(data, adjust, proteins = NULL) {
 #'                          master = aric.master))
 #' }
 
-get.visit <- function(soma.data, path.mods, master) {
+get.visit <- function(soma.data, path.mods, master,
+                      outcomes = 'outcomes.csv',
+                      adjusted = 'adjusted.csv',
+                      filters  = 'filters.csv') {
 
   visit.data <- master %>% dplyr::filter(id %in% soma.data$id)
   adtl.data <- get.adjust(stata = visit.data,
-                          mods  = list(file.path(path.mods, 'outcomes.csv'),
-                                       file.path(path.mods, 'adjusted.csv')),
-                          filts = list(file.path(path.mods, 'filters.csv')))
+                          mods  = list(file.path(path.mods, outcomes),
+                                       file.path(path.mods, adjusted)),
+                          filts = list(file.path(path.mods, filters)))
 
-  adjust <- readr::read_csv(file.path(path.mods, 'adjusted.csv'))[[1]]
+  adjust <- readr::read_csv(file.path(path.mods, adjusted))[[1]]
   visit.data <- get.data(adtl.data, soma.data, adjust)
   return(visit.data)
 }
